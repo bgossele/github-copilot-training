@@ -1,29 +1,7 @@
-from typing import Dict
+from typing import Dict, List
 import asyncio
-from enum import Enum
-from typing import List
 from fastapi import FastAPI
-from pydantic import BaseModel
-
-class TaskStatus(str, Enum):
-    """Available statuses for any task."""
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETE = "complete"
-
-class DeveloperTask(BaseModel):
-    """Model for a single task logged by a developer."""
-    task_id: int
-    title: str
-    status: TaskStatus = TaskStatus.PENDING
-    hours_spent: float = 0.0
-
-class ProductivityReport(BaseModel):
-    """The final calculated report."""
-    total_tasks: int
-    completed_tasks: int
-    total_hours_spent: float
-    completion_rate: float
+from app.models import DeveloperTask, ProductivityReport, TaskStatus
 
 
 # --- Mock Database / In-Memory Service Logic
@@ -44,7 +22,7 @@ async def generate_productivity_report() -> ProductivityReport:
     tasks = await fetch_all_tasks()
     
     total_tasks = len(tasks)
-    completed_tasks = sum(1 for task in tasks if task.status == TaskStatus.PENDING)
+    completed_tasks = sum(1 for task in tasks if task.status == TaskStatus.COMPLETE)
     
     total_hours_spent = sum(task.hours_spent for task in tasks)
     completion_rate = round(completed_tasks / total_tasks, 2) if total_tasks > 0 else 0.0
@@ -61,7 +39,7 @@ async def generate_productivity_report() -> ProductivityReport:
 app = FastAPI(title="Productivity Reporting System")
 
 @app.get("/status")
-def get_status():
+async def get_status() -> Dict[str, str]:
     return {"status": "ok"}
 
 
@@ -76,11 +54,30 @@ async def get_productivity_report():
     """Returns the calculated productivity report."""
     return await generate_productivity_report()
 
-
+"""
+Log a new developer task and store it in the mock database.
+Args:
+    task (DeveloperTask): The developer task object to be logged, containing task details.
+Returns:
+    dict: A dictionary containing:
+        - message (str): Confirmation message with the task ID
+        - task_id (int): The auto-generated ID assigned to the task
+Example:
+    >>> response = await log_task(DeveloperTask(...))
+    >>> response
+    {'message': 'Task ID 1 logged successfully.', 'task_id': 1}
+"""
 @app.post("/log_task")
-async def log_task(task: DeveloperTask):
+async def log_task(task: DeveloperTask) -> dict:
     new_id = max(MOCK_TASKS.keys()) + 1 if MOCK_TASKS else 1
     task.task_id = new_id
     MOCK_TASKS[new_id] = task
     
-    return f"Task ID {task.task_id} logged successfully."
+    return {"message": f"Task ID {task.task_id} logged successfully.", "task_id": new_id}
+
+@app.get("/task/{task_id}/status")
+async def get_task_status(task_id: int) -> Dict[str, str]:
+    task = MOCK_TASKS.get(task_id)
+    if not task:
+        return {"error": "Task not found"}
+    return {"status": task.status}
